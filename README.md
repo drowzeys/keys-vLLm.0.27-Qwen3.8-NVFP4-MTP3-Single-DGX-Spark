@@ -112,7 +112,10 @@ ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813
 It is a **mirror of [@eugr](https://hub.docker.com/u/eugr)'s `spark-vllm-b12x` GB10
 nightly** (vLLM 0.27, which loads the new `Qwen3_5MTP` arch), re-hosted and pinned here
 so the upstream nightly tag rotating can't break your build. Full credit to @eugr for the
-GB10 vLLM work.
+GB10 vLLM work. `oneshot.sh` automatically falls back to `eugr/spark-vllm-b12x:nightly-20260813`
+if the mirror is momentarily unreachable, so the recipe works either way.
+
+Pinned digest: `sha256:abd8ea18080ae571a72e8113d80775c38f4cfe07eacd591d4fedd70e95cd1bbf`
 
 ### Step-by-step (what the one-shot does, if you'd rather run it by hand)
 

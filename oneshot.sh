@@ -14,7 +14,10 @@
 set -euo pipefail
 
 # ---- pinned, immutable components (this is the "can't go wrong" part) --------
+# Primary = our pinned mirror; fallback = eugr's upstream nightly (in case the
+# mirror package is momentarily unreachable). Either is a valid GB10 build.
 IMAGE="ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813"   # mirror of eugr's GB10 nightly (credit @eugr)
+IMAGE_FALLBACK="eugr/spark-vllm-b12x:nightly-20260813"
 MODEL_REPO="unsloth/Qwen3.8-27B-NVFP4"
 MODELS_DIR="${MODELS_DIR:-$HOME/models-local-qwen38}"
 MODEL_DIR="$MODELS_DIR/Qwen3.8-27B-NVFP4"
@@ -39,10 +42,14 @@ free_gb=$(df -BG --output=avail "$MODELS_DIR" 2>/dev/null | tail -1 | tr -dc '0-
 
 # ---- 1. pull the pinned GB10 image ------------------------------------------
 say "1/5 pull runtime image (pinned; official vLLM 0.27 lacks sm_121a — this build has it)"
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  docker pull "$IMAGE" || die "could not pull $IMAGE (check ghcr access / internet)"
-else
+if docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "  image present"
+elif docker pull "$IMAGE" 2>/dev/null; then
+  echo "  pulled mirror"
+elif docker pull "$IMAGE_FALLBACK" 2>/dev/null; then
+  IMAGE="$IMAGE_FALLBACK"; echo "  mirror unreachable — pulled upstream fallback ($IMAGE_FALLBACK)"
+else
+  die "could not pull the GB10 image (mirror + fallback both failed — check internet)"
 fi
 
 # ---- 2. fetch the model (resumable) -----------------------------------------
