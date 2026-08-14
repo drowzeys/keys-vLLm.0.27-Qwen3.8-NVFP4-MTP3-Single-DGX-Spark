@@ -83,15 +83,66 @@ recommended production config for almost everyone** (256K covers virtually all r
 long as their *combined* length ≤ 2.31M, e.g. ~288K avg). YaRN slightly softens quality —
 use only if you genuinely exceed 256K.
 
-## Quick start
+## 🚀 One-shot (recommended — it can't go wrong)
+
+One idempotent, self-checking script does **everything**: preflight → pull the pinned
+GB10 image → download the model (resumable) → launch → health-wait → smoke test.
+Re-run it any time; it skips finished steps.
 
 ```bash
-# one DGX Spark, model at /models/Qwen3.8-27B-NVFP4:
-bash deploy/setup.sh                    # pull image + model
-bash deploy/serve_throughput.sh         # Profile A: c=8 @ 256K (default)
+git clone https://github.com/drowzeys/keys-vLLm.0.27-Qwen3.8-NVFP4-MTP3-Single-DGX-Spark.git
+cd keys-vLLm.0.27-Qwen3.8-NVFP4-MTP3-Single-DGX-Spark
+bash oneshot.sh                    # Profile A: c=8 @ 256K (default)
 # or:
-bash deploy/serve_longctx.sh            # Profile B: 1M context (YaRN), c≈2 full-1M
-bash bench/run_bench.sh http://localhost:8078   # reproduce the tables above
+PROFILE=longctx bash oneshot.sh   # Profile B: 1M context (YaRN), c≈2 full-1M
+```
+
+When it prints `✅ DONE`, the serve is live at `http://localhost:8078/v1` (model id
+`qwen38-nvfp4`) and has already answered a test request.
+
+### ⚠️ Why the pinned image is mandatory
+**Official / upstream vLLM 0.27 does NOT support GB10 (sm_121a)** — it has no NVFP4
+kernels for Blackwell GB10, so a stock `pip install vllm` or `vllm/vllm-openai` image
+will fail to run this model. You **must** use a GB10 build. This repo pins and mirrors
+the exact validated one:
+
+```
+ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813
+```
+It is a **mirror of [@eugr](https://hub.docker.com/u/eugr)'s `spark-vllm-b12x` GB10
+nightly** (vLLM 0.27, which loads the new `Qwen3_5MTP` arch), re-hosted and pinned here
+so the upstream nightly tag rotating can't break your build. Full credit to @eugr for the
+GB10 vLLM work.
+
+### Step-by-step (what the one-shot does, if you'd rather run it by hand)
+
+```bash
+# 1. runtime image (pinned GB10 build — NOT stock vLLM)
+docker pull ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813
+
+# 2. model
+python3 -c "from huggingface_hub import snapshot_download as d; \
+  d('unsloth/Qwen3.8-27B-NVFP4', local_dir='$HOME/models-local-qwen38/Qwen3.8-27B-NVFP4', resume_download=True)"
+
+# 3. launch (Profile A: c=8 @ 256K)
+docker run -d --restart unless-stopped --name qwen38 --gpus all --ipc=host --network host \
+  -v $HOME/models-local-qwen38:/models \
+  -e FLASHINFER_CUDA_ARCH_LIST=12.1a -e FLASHINFER_DISABLE_VERSION_CHECK=1 -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+  ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813 \
+  vllm serve /models/Qwen3.8-27B-NVFP4 --served-model-name qwen38-nvfp4 --host 0.0.0.0 --port 8078 \
+    --max-model-len 262144 --kv-cache-dtype fp8 --gpu-memory-utilization 0.90 \
+    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser hermes \
+    --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
+
+# 4. wait for health (first run compiles FP4 kernels, up to ~12 min)
+until curl -sf http://localhost:8078/v1/models; do sleep 5; done
+
+# 5. use it
+curl http://localhost:8078/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model":"qwen38-nvfp4","messages":[{"role":"user","content":"hello"}]}'
+
+# reproduce the benchmarks
+bash bench/run_bench.sh http://localhost:8078
 ```
 
 ## Hardware / software
