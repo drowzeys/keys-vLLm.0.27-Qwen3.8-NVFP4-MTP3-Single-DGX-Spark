@@ -134,7 +134,7 @@ docker run -d --restart unless-stopped --name qwen38 --gpus all --ipc=host --net
   ghcr.io/drowzeys/keys-vllm-027-gb10-qwen38:mtp3-20260813 \
   vllm serve /models/Qwen3.8-27B-NVFP4 --served-model-name qwen38-nvfp4 --host 0.0.0.0 --port 8078 \
     --max-model-len 262144 --kv-cache-dtype fp8 --gpu-memory-utilization 0.90 \
-    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser hermes \
+    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
 
 # 4. wait for health (first run compiles FP4 kernels, up to ~12 min)
@@ -158,6 +158,13 @@ bash bench/run_bench.sh http://localhost:8078
 
 ## Notes / gotchas (measured)
 
+- **Tool calling: use `--tool-call-parser qwen3_xml`, NOT `hermes`.** Qwen3.8 emits tool
+  calls in XML form (`<tool_call><function=NAME><parameter=X>value</parameter></function></tool_call>`),
+  which the `hermes` (JSON) parser silently fails to extract — `tool_calls` comes back
+  `null` and clients (Hermes, OpenWebUI, etc.) see no function call. `qwen3_xml` matches
+  the format; verified: a weather-tool prompt returns `finish_reason: tool_calls` with
+  `{"name":"get_weather","arguments":{"city":"Paris"}}`. (Earlier versions of this repo
+  shipped `hermes` — if your tool use was broken, that was why.)
 - **ngram spec decoding is useless here** — and its cudagraph profiler asserts
   `kv_len ≥ spec+1` and crashes at high depth; MTP is the right lever.
 - The DSV4F `VLLM_B12X_W4A16_*` GEMM knobs are **no-ops** on the eugr image (they belong

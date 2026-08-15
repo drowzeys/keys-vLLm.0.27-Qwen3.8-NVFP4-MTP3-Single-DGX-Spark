@@ -14,6 +14,6 @@ docker run -d --restart unless-stopped --name qwen38 --gpus all --ipc=host --net
     --max-model-len 1048576 \
     --rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":262144}' \
     --kv-cache-dtype fp8 --gpu-memory-utilization 0.92 \
-    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser hermes \
+    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
 echo "Profile B up: 1M context (YaRN), c~2 full-1M. http://localhost:8078/v1"

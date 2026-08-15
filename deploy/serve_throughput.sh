@@ -11,6 +11,6 @@ docker run -d --restart unless-stopped --name qwen38 --gpus all --ipc=host --net
   vllm serve /models/Qwen3.8-27B-NVFP4 --served-model-name qwen38-nvfp4 \
     --host 0.0.0.0 --port 8078 \
     --max-model-len 262144 --kv-cache-dtype fp8 --gpu-memory-utilization 0.90 \
-    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser hermes \
+    --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
 echo "Profile A up: c=8.8 @ 256K, MTP-3, 31.7 tok/s single. http://localhost:8078/v1"
