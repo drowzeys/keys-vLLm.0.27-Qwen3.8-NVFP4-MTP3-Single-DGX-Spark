@@ -14,3 +14,26 @@ docker run -d --restart unless-stopped --name qwen38 --gpus all --ipc=host --net
     --enable-flashinfer-autotune --enable-auto-tool-choice --tool-call-parser qwen3_xml \
     --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
 echo "Profile A up: c=8.8 @ 256K, MTP-3, 31.7 tok/s single. http://localhost:8078/v1"
+
+# --- first-load warmup (see README "first stuck prompt" gotcha) ---------------
+# Compile the LARGE-prefill path before any client connects. A cold serve that
+# takes a big first prompt (e.g. Hermes injecting a ~20K-token system prompt) can
+# stall or return a garbled/"stunned" first reply. A tiny "hello" warm request
+# does NOT cover this — it must be a large prompt (> the client's first load).
+echo "Warming the large-prefill path (first-load fix)..."
+python3 - <<'PY'
+import json, time, urllib.request
+base = "http://localhost:8078"
+for _ in range(180):
+    try: urllib.request.urlopen(base + "/v1/models", timeout=3); break
+    except Exception: time.sleep(5)
+prompt = ("Unified memory bandwidth bounds decode throughput on edge accelerators today. " * 2200) + "\nReply with: OK"
+body = json.dumps({"model": "qwen38-nvfp4", "messages": [{"role": "user", "content": prompt}],
+                   "max_tokens": 8, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}).encode()
+try:
+    urllib.request.urlopen(urllib.request.Request(base + "/v1/chat/completions", data=body,
+        headers={"Content-Type": "application/json"}), timeout=300).read()
+    print("  warmup ok (~26K-token prefill compiled) — first client prompt will be fast")
+except Exception as e:
+    print("  WARN warmup request failed (serve may still be compiling):", e)
+PY

@@ -97,14 +97,27 @@ for i in $(seq 1 150); do
   sleep 5
 done
 
-# ---- 5. smoke test (confirms MTP + endpoint) --------------------------------
-say "5/5 smoke test"
+# ---- 5. smoke test + first-load warmup (confirms MTP; compiles large-prefill) ---
+# The warm request is LARGE (~26K tokens) on purpose: it compiles the big-prefill
+# path so the first real client prompt — e.g. Hermes injecting a ~20K-token system
+# prompt — doesn't hit a cold serve and stall / return a "stunned" first reply.
+# A tiny "hello" ping would confirm the endpoint but NOT warm that path.
+say "5/5 smoke test + first-load warmup (large prefill)"
 docker logs "$NAME" 2>&1 | grep -iE "MTP model|GPU KV cache size|Maximum concurrency" | tail -3 | sed 's/^/  /'
-out=$(curl -s -m 60 "http://localhost:$PORT/v1/chat/completions" -H 'Content-Type: application/json' \
-  -d '{"model":"qwen38-nvfp4","messages":[{"role":"user","content":"Reply with exactly: READY"}],"max_tokens":16,"chat_template_kwargs":{"enable_thinking":false}}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["choices"][0]["message"]["content"].strip())' 2>/dev/null || true)
+out=$(python3 - "$PORT" <<'PY' 2>/dev/null || true
+import json, sys, urllib.request
+port = sys.argv[1]
+prompt = ("Unified memory bandwidth bounds decode throughput on edge accelerators today. " * 2200) + "\nReply with exactly: READY"
+body = json.dumps({"model": "qwen38-nvfp4", "messages": [{"role": "user", "content": prompt}],
+                   "max_tokens": 16, "temperature": 0, "chat_template_kwargs": {"enable_thinking": False}}).encode()
+req = urllib.request.Request(f"http://localhost:{port}/v1/chat/completions", data=body,
+                            headers={"Content-Type": "application/json"})
+d = json.load(urllib.request.urlopen(req, timeout=300))
+print(d["choices"][0]["message"]["content"].strip())
+PY
+)
 [ -n "$out" ] || die "smoke test got no response"
-echo "  model replied: $out"
+echo "  model replied: $out  (large-prefill path now warm)"
 
 cat <<DONE
 

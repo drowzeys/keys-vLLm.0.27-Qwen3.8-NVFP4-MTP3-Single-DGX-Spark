@@ -165,6 +165,15 @@ bash bench/run_bench.sh http://localhost:8078
   the format; verified: a weather-tool prompt returns `finish_reason: tool_calls` with
   `{"name":"get_weather","arguments":{"city":"Paris"}}`. (Earlier versions of this repo
   shipped `hermes` — if your tool use was broken, that was why.)
+- **First stuck prompt: warm the LARGE-prefill path before a client connects.** On a
+  cold serve, the *first* big prompt pays the full FP4-kernel JIT/autotune cost for that
+  prefill shape. If the first thing to hit the serve is a client sending a large system
+  prompt — e.g. **Hermes injecting a ~20K-token preamble on first load** — that request can
+  stall or come back garbled/"stunned." A tiny `"hello"` warm-up does **not** fix it: it
+  only compiles the small-shape kernels, not the large-prefill path. The launch scripts
+  (`oneshot.sh`, `deploy/serve_*.sh`) now fire a **~26K-token warm request** after health,
+  so the first real prompt lands on an already-warm serve. (Warm-path cost is fine — a 24K
+  prompt returns in ~13 s once compiled; the pain is purely the one-time cold compile.)
 - **ngram spec decoding is useless here** — and its cudagraph profiler asserts
   `kv_len ≥ spec+1` and crashes at high depth; MTP is the right lever.
 - The DSV4F `VLLM_B12X_W4A16_*` GEMM knobs are **no-ops** on the eugr image (they belong
